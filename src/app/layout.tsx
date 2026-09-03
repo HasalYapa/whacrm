@@ -38,6 +38,13 @@ export const metadata: Metadata = {
     address: false,
     telephone: false,
   },
+  // Monetag site-ownership verification (ads network) — renders as
+  // <meta name="monetag" content="..."> in the head.
+  verification: {
+    other: {
+      monetag: ['c8a813dbfa6d235a413c7702c683089d'],
+    },
+  },
 };
 
 export const viewport: Viewport = {
