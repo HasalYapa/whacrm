@@ -10,6 +10,8 @@ export interface ProviderArgs {
   systemPrompt: string
   messages: ChatMessage[]
   timeoutMs: number
+  /** Override the OpenAI-compatible endpoint (e.g. OpenRouter). */
+  endpoint?: string
 }
 
 /**

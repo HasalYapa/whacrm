@@ -316,11 +316,17 @@ export function WhatsAppConfig() {
     try {
       const FB = await loadFacebookSdk(signupConfig.app_id);
 
-      const authResponse = await new Promise<{ authResponse?: { code?: string } | null }>(
+      const authResponse = await new Promise<{
+        status?: string
+        authResponse?: { code?: string } | null
+      }>(
         (resolve, reject) => {
           try {
             FB.login(
-              (response: { authResponse?: { code?: string } | null }) => resolve(response),
+              (response: {
+                status?: string
+                authResponse?: { code?: string } | null
+              }) => resolve(response),
               {
                 config_id: signupConfig.config_id,
                 response_type: 'code',
