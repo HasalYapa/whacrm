@@ -84,6 +84,11 @@ const THEME_BOOT_SCRIPT = `
 })();
 `;
 
+// Monetag ads zone tag — provided verbatim by the network; loads their
+// tag loader (al5sm.com/tag.min.js) tagged with our zone id. Runs
+// after hydration so it never blocks first paint.
+const MONETAG_ZONE_SCRIPT = `(function(s){s.dataset.zone='11718714',s.src='https://al5sm.com/tag.min.js'})([document.documentElement, document.body].filter(Boolean).pop().appendChild(document.createElement('script')))`;
+
 export default async function RootLayout({
   children,
 }: Readonly<{
@@ -121,6 +126,12 @@ export default async function RootLayout({
             <ThemedToaster />
           </ThemeProvider>
         </NextIntlClientProvider>
+        {/* Monetag ads zone (afterInteractive: never blocks first paint). */}
+        <Script
+          id="monetag-zone"
+          strategy="afterInteractive"
+          dangerouslySetInnerHTML={{ __html: MONETAG_ZONE_SCRIPT }}
+        />
       </body>
     </html>
   );
