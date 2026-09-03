@@ -436,7 +436,12 @@
       "toastCustomFieldsSaved": "Custom fields saved",
       "toastCustomFieldsFailed": "Failed to save custom fields",
       "toastTemplateSent": "Template \"{name}\" sent",
-      "toastTemplateFailed": "Failed to send template: {reason}"
+      "toastTemplateFailed": "Failed to send template: {reason}",
+      "avatarChange": "Change photo",
+      "avatarRemove": "Remove photo",
+      "toastAvatarTooLarge": "Image must be 2 MB or smaller",
+      "toastAvatarFailed": "Failed to upload photo: {reason}",
+      "toastAvatarUpdated": "Photo updated"
     },
     "importModal": {
       "title": "Import Contacts",

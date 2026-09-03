@@ -436,7 +436,12 @@
       "toastCustomFieldsSaved": "커스텀 필드가 저장되었습니다",
       "toastCustomFieldsFailed": "커스텀 필드를 저장하지 못했습니다",
       "toastTemplateSent": "\"{name}\" 템플릿을 보냈습니다",
-      "toastTemplateFailed": "템플릿을 보내지 못했습니다: {reason}"
+      "toastTemplateFailed": "템플릿을 보내지 못했습니다: {reason}",
+      "avatarChange": "사진 변경",
+      "avatarRemove": "사진 삭제",
+      "toastAvatarTooLarge": "이미지는 2MB 이하여야 합니다",
+      "toastAvatarFailed": "사진 업로드에 실패했습니다: {reason}",
+      "toastAvatarUpdated": "사진이 변경되었습니다"
     },
     "importModal": {
       "title": "연락처 가져오기",

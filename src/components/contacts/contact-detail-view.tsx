@@ -1,9 +1,11 @@
 'use client';
 
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import { createClient } from '@/lib/supabase/client';
 import { addContactTag, deleteContactTag } from '@/lib/contacts/tag-api';
+import { uploadAccountMedia } from '@/lib/storage/upload-media';
 import { useAuth } from '@/hooks/use-auth';
+import { canEditSettings } from '@/lib/auth/roles';
 import { formatCurrency } from '@/lib/currency';
 import { toast } from 'sonner';
 import type { Contact, Tag, ContactTag, ContactNote, CustomField, ContactCustomValue, Deal, MessageTemplate } from '@/types';
@@ -23,7 +25,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
-import { Avatar, AvatarFallback } from '@/components/ui/avatar';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
 import { Badge } from '@/components/ui/badge';
 import { ScrollArea } from '@/components/ui/scroll-area';
 import {
@@ -37,6 +39,7 @@ import {
   Trash2,
   Save,
   X,
+  Camera,
   DollarSign,
   LayoutTemplate,
 } from 'lucide-react';
@@ -57,11 +60,19 @@ export function ContactDetailView({
 }: ContactDetailViewProps) {
   const t = useTranslations('Contacts.detailView');
   const supabase = createClient();
-  const { accountId, defaultCurrency } = useAuth();
+  const { accountId, defaultCurrency, accountRole } = useAuth();
+  const canEdit = accountRole ? canEditSettings(accountRole) : false;
 
   const [contact, setContact] = useState<Contact | null>(null);
   const [loading, setLoading] = useState(false);
   const [copiedPhone, setCopiedPhone] = useState(false);
+
+  // Avatar upload — Meta's Cloud API doesn't expose a customer's
+  // WhatsApp profile photo, so members upload one manually. Stored in
+  // the `contact-avatars` bucket (account-scoped path, migration 042),
+  // URL persisted on contacts.avatar_url.
+  const avatarInputRef = useRef<HTMLInputElement>(null);
+  const [uploadingAvatar, setUploadingAvatar] = useState(false);
 
   // Send template — lets the business initiate (or re-open) a conversation
   // with this contact by sending an approved template. The send route
@@ -324,6 +335,50 @@ export function ContactDetailView({
     setSavingCustom(false);
   }
 
+  async function handleAvatarChange(e: React.ChangeEvent<HTMLInputElement>) {
+    const file = e.target.files?.[0];
+    e.target.value = '';
+    if (!file || !contactId) return;
+    if (file.size > 2 * 1024 * 1024) {
+      toast.error(t('toastAvatarTooLarge'));
+      return;
+    }
+    setUploadingAvatar(true);
+    try {
+      const { publicUrl } = await uploadAccountMedia('contact-avatars', file);
+      const { error } = await supabase
+        .from('contacts')
+        .update({ avatar_url: publicUrl })
+        .eq('id', contactId);
+      if (error) throw error;
+      setContact((prev) => (prev ? { ...prev, avatar_url: publicUrl } : prev));
+      onUpdated();
+      toast.success(t('toastAvatarUpdated'));
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'error';
+      toast.error(t('toastAvatarFailed', { reason }));
+    }
+    setUploadingAvatar(false);
+  }
+
+  async function handleAvatarRemove() {
+    if (!contactId) return;
+    setUploadingAvatar(true);
+    try {
+      const { error } = await supabase
+        .from('contacts')
+        .update({ avatar_url: null })
+        .eq('id', contactId);
+      if (error) throw error;
+      setContact((prev) => (prev ? { ...prev, avatar_url: undefined } : prev));
+      onUpdated();
+    } catch (err) {
+      const reason = err instanceof Error ? err.message : 'error';
+      toast.error(t('toastAvatarFailed', { reason }));
+    }
+    setUploadingAvatar(false);
+  }
+
   async function handleSendTemplate(
     template: MessageTemplate,
     values: TemplateSendValues,
@@ -392,11 +447,53 @@ export function ContactDetailView({
             {/* Header */}
             <SheetHeader className="p-4 border-b border-border/50">
               <div className="flex items-center gap-3">
+              <div className="relative">
                 <Avatar className="size-12 bg-muted border border-border">
+                  {contact.avatar_url ? (
+                    <AvatarImage src={contact.avatar_url} alt={contact.name ?? ''} />
+                  ) : null}
                   <AvatarFallback className="bg-primary/10 text-primary text-sm font-medium">
-                    {getInitials(contact.name)}
+                    {uploadingAvatar ? (
+                      <Loader2 className="size-4 animate-spin" />
+                    ) : (
+                      getInitials(contact.name)
+                    )}
                   </AvatarFallback>
                 </Avatar>
+                {canEdit && (
+                  <>
+                    <input
+                      ref={avatarInputRef}
+                      type="file"
+                      accept="image/png,image/jpeg,image/webp"
+                      className="hidden"
+                      onChange={handleAvatarChange}
+                    />
+                    <button
+                      type="button"
+                      onClick={() => avatarInputRef.current?.click()}
+                      disabled={uploadingAvatar}
+                      title={t('avatarChange')}
+                      aria-label={t('avatarChange')}
+                      className="absolute -bottom-1 -right-1 flex items-center justify-center size-6 rounded-full bg-primary text-primary-foreground shadow hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                    >
+                      <Camera className="size-3" />
+                    </button>
+                    {contact.avatar_url && (
+                      <button
+                        type="button"
+                        onClick={handleAvatarRemove}
+                        disabled={uploadingAvatar}
+                        title={t('avatarRemove')}
+                        aria-label={t('avatarRemove')}
+                        className="absolute -top-1 -right-1 flex items-center justify-center size-5 rounded-full bg-destructive text-destructive-foreground shadow hover:opacity-90 transition-opacity cursor-pointer disabled:opacity-50"
+                      >
+                        <X className="size-3" />
+                      </button>
+                    )}
+                  </>
+                )}
+              </div>
                 <div className="flex-1 min-w-0">
                   <SheetTitle className="text-popover-foreground truncate">
                     {contact.name || t('unnamed')}
