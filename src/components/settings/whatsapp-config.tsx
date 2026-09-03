@@ -257,6 +257,10 @@ export function WhatsAppConfig() {
           data?: { waba_id?: string; phone_number_id?: string; event?: string }
         };
         if (data.type === 'WA_EMBEDDED_SIGNUP' && data.data) {
+          console.log('[EmbeddedSignup] session message:', JSON.stringify(data.data));
+          if (data.data.event) {
+            console.log('[EmbeddedSignup] event:', data.data.event);
+          }
           if (data.data.waba_id) {
             signupSessionRef.current.waba_id = data.data.waba_id;
           }
@@ -330,6 +334,10 @@ export function WhatsAppConfig() {
         },
       );
       const code = authResponse?.authResponse?.code;
+      console.log(
+        '[EmbeddedSignup] FB.login resolved:',
+        JSON.stringify({ status: authResponse?.status, hasCode: Boolean(code) }),
+      );
 
       // Give the session-info `message` event a beat to arrive (Meta
       // posts it around login resolution, occasionally after).
