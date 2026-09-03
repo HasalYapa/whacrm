@@ -1472,6 +1472,17 @@
       "ownerHint": "Full control over account and billing"
     },
     "whatsapp": {
+      "profilePhotoTitle": "Business profile photo",
+      "profilePhotoDesc": "The photo WhatsApp users see for your connected number. Changes may take a few minutes to propagate.",
+      "profilePhotoLoading": "Loading...",
+      "profilePhotoNotConfigured": "Connect WhatsApp first to manage the profile photo.",
+      "profilePhotoUpload": "Change photo",
+      "profilePhotoNoAbout": "WhatsApp Business number",
+      "profilePhotoSet": "Profile photo is set.",
+      "profilePhotoMissing": "No profile photo yet — upload one.",
+      "profilePhotoTooLarge": "Photo must be 5 MB or smaller.",
+      "profilePhotoFailed": "Failed to update photo: {reason}",
+      "profilePhotoUpdated": "Profile photo updated",
       "title": "WhatsApp connection",
       "description": "Connect your Meta WhatsApp Business API. Credentials, webhook, and setup steps all live here.",
       "tokenCorrupted": "Stored token can't be decrypted",
