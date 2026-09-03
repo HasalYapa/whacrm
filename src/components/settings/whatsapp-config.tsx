@@ -34,6 +34,22 @@ import type { WhatsAppConfig as WhatsAppConfigType } from '@/types';
 
 const MASKED_TOKEN = '••••••••••••••••';
 
+// Minimal typings for the Facebook JS SDK loaded by Embedded Signup.
+// eslint-disable-next-line @typescript-eslint/no-explicit-any
+type FacebookFB = any;
+declare global {
+  interface Window {
+    FB?: FacebookFB;
+    fbAsyncInit?: () => void;
+  }
+}
+
+interface EmbeddedSignupConfig {
+  enabled: boolean
+  app_id?: string
+  config_id?: string
+}
+
 type ConnectionStatus = 'connected' | 'disconnected' | 'unknown';
 type ResetReason = 'token_corrupted' | 'meta_api_error' | null;
 
@@ -86,6 +102,18 @@ export function WhatsAppConfig() {
   // a viewer's toggle would match zero rows and appear to work.
   const [mirrorMedia, setMirrorMedia] = useState(true);
   const [savingMirror, setSavingMirror] = useState(false);
+
+  // Embedded Signup — one-click "Connect with Meta". `signupConfig`
+  // comes from GET /api/whatsapp/embedded-signup (503 when the
+  // deployment hasn't set META_APP_ID + META_EMBEDDED_SIGNUP_CONFIG_ID,
+  // in which case the manual form below stays the only path).
+  const [signupConfig, setSignupConfig] = useState<EmbeddedSignupConfig | null>(null);
+  const [signupLoading, setSignupLoading] = useState(false);
+  // The popup reports waba_id / phone_number_id via a `message` event
+  // *while* FB.login's auth response carries the one-time `code` —
+  // the listener writes here so the handler can pair the two.
+  const signupSessionRef = useRef<{ waba_id?: string; phone_number_id?: string }>({});
+
 
   // True once /register has succeeded on Meta's side (timestamp set
   // in the row). When false, the saved config is metadata-only and
@@ -202,6 +230,170 @@ export function WhatsAppConfig() {
     loadedAccountIdRef.current = accountId;
     fetchConfig(accountId);
   }, [authLoading, profileLoading, user?.id, accountId, fetchConfig]);
+
+  // Embedded Signup availability + popup session listener. The listener
+  // must be attached *before* FB.login fires — Meta posts the session
+  // info (waba_id, phone_number_id) from the popup while login is still
+  // resolving. Only events from https://www.facebook.com are honoured.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await fetch('/api/whatsapp/embedded-signup');
+        if (res.ok) {
+          const data = (await res.json()) as EmbeddedSignupConfig;
+          if (!cancelled) setSignupConfig(data);
+        }
+      } catch {
+        // 503 / network error — the manual form is the fallback path.
+      }
+    })();
+
+    function onSignupMessage(event: MessageEvent) {
+      if (event.origin !== 'https://www.facebook.com') return;
+      try {
+        const data = JSON.parse(String(event.data)) as {
+          type?: string
+          data?: { waba_id?: string; phone_number_id?: string; event?: string }
+        };
+        if (data.type === 'WA_EMBEDDED_SIGNUP' && data.data) {
+          if (data.data.waba_id) {
+            signupSessionRef.current.waba_id = data.data.waba_id;
+          }
+          if (data.data.phone_number_id) {
+            signupSessionRef.current.phone_number_id = data.data.phone_number_id;
+          }
+        }
+      } catch {
+        // Not JSON (e.g. other FB SDK cross-frame messages) — ignore.
+      }
+    }
+    window.addEventListener('message', onSignupMessage);
+    return () => {
+      cancelled = true;
+      window.removeEventListener('message', onSignupMessage);
+    };
+  }, []);
+
+  function loadFacebookSdk(appId: string): Promise<FacebookFB> {
+    if (window.FB) return Promise.resolve(window.FB);
+    return new Promise((resolve, reject) => {
+      window.fbAsyncInit = () => {
+        window.FB!.init({
+          appId,
+          cookie: true,
+          xfbml: false,
+          version: 'v21.0',
+        });
+        resolve(window.FB!);
+      };
+      const script = document.createElement('script');
+      script.src = 'https://connect.facebook.net/en_US/sdk.js';
+      script.async = true;
+      script.onerror = () => reject(new Error('Failed to load the Facebook SDK'));
+      document.body.appendChild(script);
+    });
+  }
+
+  /**
+   * Open Meta's Embedded Signup popup, exchange the resulting one-time
+   * code for a long-lived token server-side, then save the discovered
+   * credentials through the normal config endpoint (verify → encrypt →
+   * register → subscribe). The customer never copies an ID or token.
+   */
+  async function handleConnectWithMeta() {
+    if (signupLoading) return;
+    if (!signupConfig?.enabled || !signupConfig.app_id || !signupConfig.config_id) {
+      toast.error(t('connectMetaUnavailable'));
+      return;
+    }
+    setSignupLoading(true);
+    signupSessionRef.current = {};
+    try {
+      const FB = await loadFacebookSdk(signupConfig.app_id);
+
+      const authResponse = await new Promise<{ authResponse?: { code?: string } | null }>(
+        (resolve, reject) => {
+          try {
+            FB.login(
+              (response: { authResponse?: { code?: string } | null }) => resolve(response),
+              {
+                config_id: signupConfig.config_id,
+                response_type: 'code',
+                override_default_response_type: 'code',
+                extras: { setup: {}, sessionInfoVersion: '3' },
+              },
+            );
+          } catch (err) {
+            reject(err instanceof Error ? err : new Error(String(err)));
+          }
+        },
+      );
+      const code = authResponse?.authResponse?.code;
+
+      // Give the session-info `message` event a beat to arrive (Meta
+      // posts it around login resolution, occasionally after).
+      if (!signupSessionRef.current.waba_id) {
+        await new Promise((r) => setTimeout(r, 1500));
+      }
+      const { waba_id: wabaId, phone_number_id: popupPhoneId } = signupSessionRef.current;
+
+      if (!code || !wabaId) {
+        toast.error(t('connectMetaPopupFailed'));
+        return;
+      }
+
+      // Server-side: code → long-lived token → phone number discovery.
+      const res = await fetch('/api/whatsapp/embedded-signup', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          code,
+          waba_id: wabaId,
+          phone_number_id: popupPhoneId,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        toast.error(data.error || t('connectMetaExchangeFailed'));
+        return;
+      }
+
+      // Persist through the existing pipeline so the token is
+      // encrypted, verified with Meta, and registered for inbound
+      // events exactly like a manual save. Embedded Signup collects
+      // the 2FA PIN inside the popup and registers the number to the
+      // app itself, so no PIN is needed here.
+      const saveRes = await fetch('/api/whatsapp/config', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          phone_number_id: data.phone_number_id,
+          waba_id: data.waba_id,
+          access_token: data.access_token,
+        }),
+      });
+      const saveData = await saveRes.json();
+      if (!saveRes.ok) {
+        toast.error(saveData.error || t('connectMetaExchangeFailed'));
+        return;
+      }
+      if (saveData.registered === false && saveData.registration_error) {
+        toast.error(
+          `Saved, but Meta couldn't register the number: ${saveData.registration_error}`,
+          { duration: 12000 },
+        );
+      } else {
+        toast.success(t('connectMetaSuccess'), { duration: 8000 });
+      }
+      if (accountId) await fetchConfig(accountId);
+    } catch (err) {
+      console.error('Embedded Signup failed:', err);
+      toast.error(t('connectMetaFailed'));
+    } finally {
+      setSignupLoading(false);
+    }
+  }
 
   async function handleToggleMirrorMedia(next: boolean) {
     if (!config || !accountId || savingMirror) return;
@@ -605,6 +797,26 @@ export function WhatsAppConfig() {
             <CardDescription className="text-muted-foreground">
               {t('apiCredentialsDesc')}
             </CardDescription>
+            {signupConfig?.enabled && canEditSettings && (
+              <div className="pt-2 space-y-2">
+                <Button
+                  type="button"
+                  onClick={handleConnectWithMeta}
+                  disabled={signupLoading}
+                  className="w-full bg-[#1877F2] hover:bg-[#0d65d9] text-white"
+                >
+                  {signupLoading ? (
+                    <Loader2 className="mr-2 size-4 animate-spin" />
+                  ) : (
+                    <Zap className="mr-2 size-4" />
+                  )}
+                  {t('connectMetaBtn')}
+                </Button>
+                <p className="text-xs text-muted-foreground text-center">
+                  {t('connectMetaDesc')}
+                </p>
+              </div>
+            )}
           </CardHeader>
           <CardContent className="space-y-4">
             <div className="space-y-2">
