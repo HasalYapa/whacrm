@@ -15,8 +15,9 @@ export const AI_PROVIDER_DEFAULT_MODEL: Record<AiProvider, string> = {
   anthropic: 'claude-haiku-4-5-20251001',
   // OpenRouter hosts free-tier community models (`:free` suffix) — a
   // zero-cost starting point for the auto-reply bot. Model IDs churn
-  // fast; the field stays editable free text in the settings form.
-  openrouter: 'meta-llama/llama-3.3-70b-instruct:free',
+  // fast (retirements happen without notice); the field stays editable
+  // free text in the settings form. Verified live: minimax-m3:free.
+  openrouter: 'minimax/minimax-m3:free',
 }
 
 /**
