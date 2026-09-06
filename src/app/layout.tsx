@@ -3,6 +3,7 @@ import { NextIntlClientProvider } from 'next-intl';
 import { getLocale, getMessages } from 'next-intl/server';
 import { Inter } from "next/font/google";
 import Script from "next/script";
+import { Analytics } from '@vercel/analytics/next';
 import "./globals.css";
 import { ThemeProvider } from "@/hooks/use-theme";
 import { ThemedToaster } from "@/components/themed-toaster";
@@ -132,6 +133,7 @@ export default async function RootLayout({
           strategy="afterInteractive"
           dangerouslySetInnerHTML={{ __html: MONETAG_ZONE_SCRIPT }}
         />
+        <Analytics />
       </body>
     </html>
   );
